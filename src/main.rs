@@ -22,8 +22,32 @@ fn get_encrypted_account_id(summ_name: &str) -> String {
     return "B1K11tBYT6OVo88bHODxC55XiWZEBvKcsi0koJe5SsGyh4c".to_owned();
 }
 
-fn main() {
-    let encrypted_account_id = "JZO25Xuf5Y0QHfEmXvsDGIc_Or4zB_wowN9ZhB3-nw1ljQ".to_owned();
+fn get_matches(id: &str, start_idx: i32, end_idx: i32) -> String {
     let api_endpoint_base = "/lol/match/v4/matchlists/by-account".to_owned();
+
+    return "{}".to_owned();
+}
+
+fn main() {
+
+    // Get encrypted account Id
+    let enc_account_id = get_encrypted_account_id("Suq Mediq");
+
+    while (there_are_more_matches) {
+        // get match history by encrypted account Id
+            // Limit of 100 matches at a time. Grab 100 at a time until there are no more
+        let mut start_idx = 0;
+        let mut end_idx = 99;
+        let matches = get_matches(&enc_account_id, start_idx, end_idx);
+        // for match in matches.gameId
+        // get /lol/match/v4/matches/{matchId}
+        // participantIdentities.player.summonerName (and ID)
+    }
+
+    // Interested in:
+    // Our teams role names -> get summoner name for each role
+    // Result of the game (win/loss/none)
+    // KDA of each person?
+
     println!("end of main\n");
 }
