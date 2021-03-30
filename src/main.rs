@@ -33,7 +33,7 @@ fn main() {
     // Get encrypted account Id
     let enc_account_id = get_encrypted_account_id("Suq Mediq");
 
-    while (there_are_more_matches) {
+    while there_are_more_matches {
         // get match history by encrypted account Id
             // Limit of 100 matches at a time. Grab 100 at a time until there are no more
         let mut start_idx = 0;
