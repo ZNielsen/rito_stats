@@ -11,6 +11,22 @@ pub const ENDPOINT: &'static str = "https://na1.api.riotgames.com";
 // Result of the game (win/loss/none)
 // KDA of each person?
 
+// TODO - make internal data representation
+enum GameResult {
+    Win,
+    Loss,
+    Other
+}
+
+struct Player {
+    role: String,
+    summ_name: String,
+}
+
+struct Game {
+    result: GameResult,
+    team: Vec<Player>,
+}
 
 /// Function expects API key to be the only thing in the file
 fn get_api_key() -> Result<String, std::io::Error> {
@@ -56,7 +72,6 @@ fn get_game_info(game_id: &str) -> Result<Json, Box<dyn std::error::Error>> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    // TODO - make internal data representation
 
     let enc_account_id = get_encrypted_account_id("Suq Mediq")?;
     println!("encrypted account id : {}" , enc_account_id);
@@ -85,6 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let participant_identities: Vec<Json> = game_info["participantIdentities"].clone().into();
             let stats: Vec<Json> = game_info["teams"].clone().into();
             let participants: Vec<Json> = game_info["participants"].clone().into();
+            assert!(participant_identities.len() == stats.len());
+            assert!(stats.len() == participants.len());
             let iter = participant_identities.iter()
                 .zip(participants.iter())
                 .zip(stats.iter())
