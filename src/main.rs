@@ -1,39 +1,8 @@
+mod variant;
+use crate::variant::Variant;
 use std::collections::HashMap;
-use serde::Deserialize;
 
-#[derive(Deserialize, Debug, Clone)]
-#[serde(untagged)]
-enum Variant {
-    Int(i64),
-    Str(String),
-    VecVar(std::vec::Vec<HashMap<String, Variant>>),
-}
-impl Into<String> for Variant {
-    fn into(self) -> String {
-        match self {
-            Variant::Str(s) => s,
-            _ => panic!("Not a string: {:?}", self),
-        }
-    }
-}
-impl Into<i64> for Variant {
-    fn into(self) -> i64 {
-        match self {
-            Variant::Int(i) => i,
-            _ => panic!("Not an int: {:?}", self),
-        }
-    }
-}
-impl Into<Vec<HashMap<String, Variant>>> for Variant {
-    fn into(self) -> Vec<HashMap<String, Variant>> {
-        match self {
-            Variant::VecVar(v) => v,
-            _ => panic!("Not a Vec: {:?}", self),
-        }
-    }
-}
-
-// {"id":"B1K11tBYT6OVo88bHODxC55XiWZEBvKcsi0koJe5SsGyh4c","accountId":"JZO25Xuf5Y0QHfEmXvsDGIc_Or4zB_wowN9ZhB3-nw1ljQ","puuid":"oq8loqZb6CYoxISQ6PK3FUyZuxnMqYwVw4VC1exqlbRTku0sjJTyNF1NH2AafbmyWXYi5Y7N4KEpVw","name":"Suq Mediq","profileIconId":1639,"revisionDate":1616733734000,"summonerLevel":71}
+type Json = HashMap<String, Variant>;
 
 pub const ENDPOINT: &'static str = "https://na1.api.riotgames.com";
 
@@ -46,33 +15,42 @@ fn get_api_key() -> Result<String, std::io::Error> {
 
 fn get_encrypted_account_id(summ_name: &str) -> Result<String, Box<dyn std::error::Error>> {
     let slug = String::from("/lol/summoner/v4/summoners/by-name/") + summ_name +
-        "?api_key=" + &get_api_key().unwrap();
+        "?api_key=" + &get_api_key()?;
     let request = String::from(ENDPOINT) + &slug;
     println!("Sending reqwest: {}", request);
     let resp = reqwest::blocking::get(request)?;
-    let j = resp.json::<HashMap<String, Variant>>()?;
+    let j = resp.json::<Json>()?;
     return Ok(j["accountId"].clone().into());
 }
 
-fn get_matches(id: &str, start_idx: i32, end_idx: i32) -> Result<HashMap<String, Variant>, Box<dyn std::error::Error>> {
-    let api_endpoint_base = "/lol/match/v4/matchlists/by-account".to_owned();
+fn get_matches(id: &str, start_idx: i32, end_idx: i32) -> Result<Json, Box<dyn std::error::Error>> {
+    // TODO put range into request
+    let api_endpoint_base = String::from("/lol/match/v4/matchlists/by-account");
     let slug = api_endpoint_base + "/" + id +
-        "?api_key=" + &get_api_key().unwrap();
+        "?api_key=" + &get_api_key()?;
     let request = String::from(ENDPOINT) + &slug;
     println!("Sending reqwest: {}", request);
     let resp = reqwest::blocking::get(request)?;
-    let j = resp.json::<HashMap<String, Variant>>()?;
+    let j = resp.json::<Json>()?;
     return Ok(j);
 }
 
-fn get_game_info(id: i64) -> Result<HashMap<String, Variant>, Box<dyn std::error::Error>> {
+fn get_game_info(game_id: &str) -> Result<Json, Box<dyn std::error::Error>> {
+    let api_endpoint_base = String::from("/lol/match/v4/matches/");
+    let slug = api_endpoint_base + game_id +
+        "?api_key=" + &get_api_key()?;
+    let request = String::from(ENDPOINT) + &slug;
+    println!("Sending reqwest: {}", request);
+    let resp = reqwest::blocking::get(request)?;
+    let j = resp.json::<Json>()?;
+    return Ok(j);
 
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    // Get encrypted account Id
-    println!("Getting account id");
+    // TODO - make internal data representation
+
     let enc_account_id = get_encrypted_account_id("Suq Mediq")?;
     println!("encrypted account id : {}" , enc_account_id);
 
@@ -83,13 +61,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut start_idx = 0;
         let mut end_idx = 99;
         let matches = get_matches(&enc_account_id, start_idx, end_idx)?;
-        println!("matches: {}", matches);
-        let games: Vec<HashMap<String, Variant>> = matches["matches"].into();
+        println!("matches: {:?}", matches);
+        let games: Vec<Json> = matches["matches"].clone().into();
         for game in games {
-            let game_id: i64 = game["gameId"].into();
-            // get /lol/match/v4/matches/{matchId}
-            let game_info = get_game_info(game_id);
-            // participantIdentities.player.summonerName (and ID)
+            let game_id: i64 = game["gameId"].clone().into();
+            let game_info = get_game_info(&game_id.to_string())?;
+
+            // TODO - zip all these together and iterate over them at once
+
+            let participant_identities: Vec<Json> = game_info["participantIdentities"].clone().into();
+            for participant_identity in participant_identities {
+                let participant_id: i64 = participant_identity["participantId"].clone().into();
+                let player: Json = participant_identity["player"].clone().into();
+                let summoner_name: String = player["summonerName"].clone().into();
+                let summoner_id: String = player["summonerId"].clone().into();
+            }
+
+            let stats: Vec<Json> = game_info["teams"].clone().into();
+            for stat in stats {
+                let win: String = stat["win"].clone().into();
+            }
+
+            let participants: Vec<Json> = game_info["participants"].clone().into();
+            for participant in participants {
+                let team_id: i64 = participant["teamId"].clone().into();
+                let participant_id: i64 = participant["participantId"].clone().into();
+            }
         }
         more_matches = false;
     }
