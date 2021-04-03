@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::vec::Vec;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -6,7 +7,7 @@ use serde::Deserialize;
 pub enum Variant {
     Int(i64),
     Str(String),
-    VecVar(std::vec::Vec<HashMap<String, Variant>>),
+    VecVar(Vec<HashMap<String, Variant>>),
     Hash(HashMap<String, Variant>),
 }
 impl Into<String> for Variant {

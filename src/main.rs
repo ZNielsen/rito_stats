@@ -1,9 +1,8 @@
-mod variant;
-use crate::variant::Variant;
 use std::collections::HashMap;
 use std::vec::Vec;
 
-type Json = HashMap<String, Variant>;
+// type Json = HashMap<String, Variant>;
+type Json = HashMap<String, serde_json::Value>;
 
 pub const ENDPOINT: &'static str = "https://na1.api.riotgames.com";
 pub const BLUE_SIDE: i64 = 100;
@@ -14,24 +13,40 @@ pub const RED_SIDE: i64 = 200;
 // Result of the game (win/loss/none)
 // KDA of each person?
 
-// TODO - make internal data representation
+// My Data
 enum GameResult {
     Win,
     Loss,
     Other
 }
-
 struct Player {
     lane: String,
     summ_name: String,
     summ_id: String,
 }
-
 struct Game {
     result: GameResult,
     team: Vec<Player>,
     team_of_interest: i64,
 }
+
+// Rito data for serde_json
+// struct JsonGame {
+//     gameId: i64
+// }
+
+//             let stats: Vec<Json> = game_info["teams"];
+//             let participant_identities: Vec<Json> = game_info["participantIdentities"];
+//             let participants: Vec<Json> = game_info["participants"];
+//                 let participant_id_id: i64 = participant_identity["participantId"];
+//                 let player: Json = participant_identity["player"];
+//                 let summoner_name: String = player["summonerName"];
+//                 let summoner_id: String = player["summonerId"];
+
+//                 let team_id: i64 = participant["teamId"];
+//                 let participant_id: i64 = participant["participantId"];
+//                 let timeline: Json = participant["timeline"];
+//                 let lane: String = timeline["lane"];
 
 /// Function expects API key to be the only thing in the file
 fn get_api_key() -> Result<String, std::io::Error> {
@@ -46,37 +61,36 @@ fn get_encrypted_account_id(summ_name: &str) -> Result<String, Box<dyn std::erro
     let request = String::from(ENDPOINT) + &slug;
     println!("Sending reqwest: {}", request);
     let resp = reqwest::blocking::get(request)?;
-    let j = resp.json::<Json>()?;
-    return Ok(j["accountId"].clone().into());
+    let j = resp.json::<serde_json::Value>()?;
+    return Ok(j["accountId"].to_string());
 }
 
-fn get_matches(id: &str, start_idx: i32, end_idx: i32) -> Result<Json, Box<dyn std::error::Error>> {
+fn get_matches(id: &str, start_idx: i32, end_idx: i32) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let api_endpoint_base = String::from("/lol/match/v4/matchlists/by-account");
     let slug = api_endpoint_base + "/" + id +
-        "?api_key=" + &get_api_key()? +
-        "?beginIndex=" + &start_idx.to_string() +
-        "?endIndex=" + &end_idx.to_string();
+        "?endIndex=" + &end_idx.to_string() +
+        "&beginIndex=" + &start_idx.to_string() +
+        "&api_key=" + &get_api_key()?;
     let request = String::from(ENDPOINT) + &slug;
     println!("Sending reqwest: {}", request);
-    let resp = reqwest::blocking::get(request)?;
-    let j = resp.json::<Json>()?;
+    let resp = reqwest::blocking::get(&request)?;
+    let j = resp.json::<serde_json::Value>()?;
     return Ok(j);
 }
 
-fn get_game_info(game_id: &str) -> Result<Json, Box<dyn std::error::Error>> {
+fn get_game_info(game_id: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let api_endpoint_base = String::from("/lol/match/v4/matches/");
     let slug = api_endpoint_base + game_id +
         "?api_key=" + &get_api_key()?;
     let request = String::from(ENDPOINT) + &slug;
     println!("Sending reqwest: {}", request);
     let resp = reqwest::blocking::get(request)?;
-    let j = resp.json::<Json>()?;
+    let j = resp.json::<serde_json::Value>()?;
     return Ok(j);
 
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     let mut data = Vec::<Game>::new();
     let summoner = String::from("Suq Mediq");
 
@@ -95,11 +109,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         start_idx = end_idx+1;
         end_idx = start_idx + 100;
 
-        let range_start: i64 = matches["startIdx"].clone().into();
-        let range_end: i64 = matches["endIdx"].clone().into();
+        let range_start: i64 = matches["startIndex"].as_i64()?;
+        let range_end: i64 = matches["endIndex"].as_i64()?;
         more_matches = range_end-range_start == 100;
 
-        let games: Vec<Json> = matches["matches"].clone().into();
+        let games: Vec<serde_json::Value> = matches["matches"];
         for a_game in games {
             let mut game = Game {
                 result: GameResult::Other,
@@ -107,12 +121,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 team_of_interest: 0,
             };
 
-            let game_id: i64 = a_game["gameId"].clone().into();
+            let game_id: i64 = a_game["gameId"];
             let game_info = get_game_info(&game_id.to_string())?;
 
-            let stats: Vec<Json> = game_info["teams"].clone().into();
-            let participant_identities: Vec<Json> = game_info["participantIdentities"].clone().into();
-            let participants: Vec<Json> = game_info["participants"].clone().into();
+            let stats: Vec<Json> = game_info["teams"];
+            let participant_identities: Vec<Json> = game_info["participantIdentities"];
+            let participants: Vec<Json> = game_info["participants"];
             assert!(participant_identities.len() == participants.len());
             let iter = participant_identities.iter()
                 .zip(participants.iter())
@@ -125,15 +139,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for it in iter {
                 let (participant_identity, participant) = it;
 
-                let participant_id_id: i64 = participant_identity["participantId"].clone().into();
-                let player: Json = participant_identity["player"].clone().into();
-                let summoner_name: String = player["summonerName"].clone().into();
-                let summoner_id: String = player["summonerId"].clone().into();
+                let participant_id_id: i64 = participant_identity["participantId"];
+                let player: Json = participant_identity["player"];
+                let summoner_name: String = player["summonerName"];
+                let summoner_id: String = player["summonerId"];
 
-                let team_id: i64 = participant["teamId"].clone().into();
-                let participant_id: i64 = participant["participantId"].clone().into();
-                let timeline: Json = participant["timeline"].clone().into();
-                let lane: String = timeline["lane"].clone().into();
+                let team_id: i64 = participant["teamId"];
+                let participant_id: i64 = participant["participantId"];
+                let timeline: Json = participant["timeline"];
+                let lane: String = timeline["lane"];
 
                 assert!(participant_id_id == participant_id);
 
@@ -156,7 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             for stat in stats {
-                let win: String = stat["win"].clone().into();
+                let win: String = stat["win"];
             }
 
             match game.team_of_interest {
