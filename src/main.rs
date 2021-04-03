@@ -89,14 +89,8 @@ struct Matches {
 /// Function expects API key to be the only thing in the file
 /// Only read once, then store the string statically
 fn get_api_key() -> Result<String, std::io::Error> {
-    static mut key: String = String::from("");
-    unsafe {
-        if key == "" {
-            key = std::fs::read_to_string("api.key")?.replace("\n", "");
-            println!("key: {}", key);
-        }
-    }
-    return Ok(key.clone());
+    let key = std::fs::read_to_string("api.key")?.replace("\n", "");
+    return Ok(key);
 }
 
 async fn get_encrypted_account_id(summ_name: &str) -> Result<String, Box<dyn std::error::Error>> {
