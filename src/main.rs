@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 use reqwest::Client;
+use std::collections::HashMap;
 use std::vec::Vec;
 
 pub mod structs;
@@ -80,12 +81,6 @@ fn rate_limiter(last_call: &std::time::Instant, api_rate: &std::time::Duration) 
     }
 }
 
-fn is_valid_game(game: &GameData) -> bool {
-    // Has 10 players
-    // run time of over 10 min
-    // is just a normal game (Summoner's Rift)
-
-}
 
 async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::error::Error>> {
     let mut data = Vec::<GameData>::new();
@@ -129,9 +124,8 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
             range_start, range_end, range_end-range_start);
         println!("more matches: {}", more_matches);
 
-        for a_match in matches.matches {
-            let game_id = a_match.gameId;
-            if data_has_game_info(&data, game_id) {
+        for this_match in matches.matches {
+            if data_has_game_info(&data, this_match.gameId) {
                 // We already have the info for this game, skip making the request
                 continue;
             }
@@ -141,12 +135,15 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
 
             let mut game = GameData {
                 result: GameResultData::Other,
-                team: Vec::new(),
+                teams: HashMap::new(),
                 team_of_interest: 0,
-                game_id: game_id,
+                game_id: this_match.gameId,
+                game_duration: 0,
+                game_mode: String::new(),
+                game_type: String::new(),
             };
 
-            let game_info = match get_game_info(&client, &game_id.to_string()).await {
+            let game_info = match get_game_info(&client, &this_match.gameId.to_string()).await {
                 Ok(gi) => gi,
                 Err(e) => {
                     println!("Error in get_game_info: {}", e);
@@ -180,11 +177,10 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
 
                 };
 
-                match participant.teamId {
-                    BLUE_SIDE => blue_team.push(p),
-                    RED_SIDE => red_team.push(p),
-                    _ => panic!("Got a team id of {}", participant.teamId),
-                }
+                assert!(participant.teamId != 0);
+                game.teams.entry(participant.teamId)
+                    .or_insert(Vec::new())
+                    .push(p);
             }
 
             for team_stats in game_info.teams {
@@ -195,20 +191,11 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
                 }
             }
 
-            match game.team_of_interest {
-                BLUE_SIDE => game.team = blue_team,
-                RED_SIDE => game.team = red_team,
-                _ => panic!("team of interest is {}", game.team_of_interest),
-            }
-
-            game.game_id = game_id;
-
-            if is_valid_game(&game) {
-                data.push(game);
-                // Overwrite data file on each call
-                let serialized = serde_json::to_string(&data)?;
-                std::fs::write(&cache_file, serialized)?;
-            }
+            game.game_duration = game_info.gameDuration;
+            data.push(game);
+            // Overwrite data file on each call
+            let serialized = serde_json::to_string(&data)?;
+            std::fs::write(&cache_file, serialized)?;
         }
     }
 
@@ -216,6 +203,28 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
     let serialized = serde_json::to_string(&data)?;
     std::fs::write(&cache_file, serialized)?;
     Ok(data)
+}
+
+fn is_valid_game(game: &GameData) -> bool {
+    // Has 10 players
+    let mut player_count = 0;
+    for team in game.teams.values() {
+        player_count += team.len();
+    }
+    if player_count != 10 {
+        println!("Invalid game: {} players", player_count);
+        return false;
+    }
+
+    // run time of over 10 min
+    if game.game_duration < (10 * 60) {
+        return false;
+    }
+
+    // is just a normal game (Summoner's Rift)
+
+
+    true
 }
 
 fn analyze_data(data: &Vec<GameData>, counterpart_summoner_id: &str) {
@@ -228,11 +237,16 @@ fn analyze_data(data: &Vec<GameData>, counterpart_summoner_id: &str) {
     // Add up games with counterpart summoner
     let mut count = 0;
     for game in data {
+
+        if !is_valid_game(&game) {
+            continue;
+        }
+
         if count > 100 {
             break;
         }
 
-        for member in &game.team {
+        for member in &game.teams[&game.team_of_interest] {
             let mut idx = without_idx;
             if member.summ_id == counterpart_summoner_id {
                 idx = with_idx;

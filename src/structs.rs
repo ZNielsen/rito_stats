@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::vec::Vec;
 use serde::{Deserialize, Serialize};
 
@@ -16,9 +17,12 @@ pub struct PlayerData {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GameData {
     pub result: GameResultData,
-    pub team: Vec<PlayerData>,
+    pub teams: HashMap<i64, Vec<PlayerData>>,
     pub team_of_interest: i64,
     pub game_id: i64,
+    pub game_duration: i64,
+    pub game_mode: String,
+    pub game_type: String,
 }
 
 // Rito data for serde_json
@@ -65,6 +69,7 @@ pub struct GameInfo {
     pub participantIdentities: Vec<ParticipantId>,
     pub participants: Vec<Participant>,
     pub gameCreation: i64,
+    pub gameDuration: i64,
     pub seasonId: i64,
     pub gameVersion: String,
     pub mapId: i64,
