@@ -9,3 +9,4 @@ target/
 .vim/
 
 api.key
+bad_game.json

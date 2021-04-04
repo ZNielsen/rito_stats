@@ -2,7 +2,7 @@ use std::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 // My Data
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub enum GameResultData {
     Win,
     Other
@@ -64,6 +64,12 @@ pub struct GameInfo {
     pub teams: Vec<TeamStats>,
     pub participantIdentities: Vec<ParticipantId>,
     pub participants: Vec<Participant>,
+    pub gameCreation: i64,
+    pub seasonId: i64,
+    pub gameVersion: String,
+    pub mapId: i64,
+    pub gameMode: String,
+    pub gameType: String,
 }
 
 #[derive(Debug, Deserialize)]

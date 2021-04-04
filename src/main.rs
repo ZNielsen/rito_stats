@@ -22,8 +22,9 @@ async fn get_account_info(summ_name: &str) -> Result<Account, Box<dyn std::error
     let request = String::from(ENDPOINT) + &slug;
     println!("Sending reqwest: {}", request);
     let resp = reqwest::get(request).await?;
-    let j = resp.json::<Account>().await?;
-    println!("account: {:#?}", j);
+    let str = resp.text().await?;
+    println!("Account: {}", str);
+    let j = serde_json::from_str(&str)?;
     return Ok(j);
 }
 
@@ -47,18 +48,15 @@ async fn get_game_info(client: &Client, game_id: &str) -> Result<GameInfo, Box<d
     let request = String::from(ENDPOINT) + &slug;
     println!("Sending reqwest: {}", request);
     let resp = client.get(&request).send().await?;
+    let str = resp.text().await?;
 
-    let game = match resp.json::<GameInfo>().await {
+    let game = match serde_json::from_str(&str) {
         Ok(g) => g,
         Err(e) => {
             println!("error decoding match into json: {}", e);
-
-            // Sleep before we make the call
-            std::thread::sleep(std::time::Duration::from_millis(30000));
-            let resp = client.get(&request).send().await?;
-            println!("response: {:#?}", resp.bytes().await?);
-            let resp = client.get(&request).send().await?;
-            resp.json::<GameInfo>().await?
+            println!("response was: {:?}", str);
+            std::fs::write("bad_game.json", str)?;
+            return Err(std::boxed::Box::new(e));
         },
     };
 
@@ -72,6 +70,21 @@ fn data_has_game_info(data: &Vec<GameData>, game_id: i64) -> bool {
         }
     }
     false
+}
+
+/// Wait until the specified amount of time has passed since the last call
+fn rate_limiter(last_call: &std::time::Instant, api_rate: &std::time::Duration) {
+    let sleep_time = std::time::Duration::from_millis(10);
+    while last_call.elapsed().as_millis() < api_rate.as_millis() {
+        std::thread::sleep(sleep_time);
+    }
+}
+
+fn is_valid_game(game: &GameData) -> bool {
+    // Has 10 players
+    // run time of over 10 min
+    // is just a normal game (Summoner's Rift)
+
 }
 
 async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::error::Error>> {
@@ -94,6 +107,10 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
     // The API has a limit of 100 matches at a time. Grab 100 at a time until there are no more
     let mut start_idx: i64 = 0;
     let mut end_idx: i64 = 100;
+    // The API has a limit of 100 calls in 2 minutes
+    // 120 sec / 100 calls == 1.2 seconds between calls
+    let mut last_call = std::time::Instant::now();
+    let api_rate = std::time::Duration::from_millis(1200);
     while more_matches {
         println!("fetching matches with start_idx: {}, end_idx: {}", start_idx, end_idx);
         let matches = get_matches(&client, &account_info.accountId, start_idx, end_idx).await?;
@@ -105,6 +122,7 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
 
         let range_start = matches.startIndex;
         let range_end = matches.endIndex;
+        // TODO - does this have a 1% chance of causing an error?
         more_matches = range_end-range_start == 100;
 
         println!("range_start: {}, range_end: {}, diff: {}",
@@ -118,6 +136,9 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
                 continue;
             }
 
+            // API has a quota limit, pause so we don't get an error
+            rate_limiter(&last_call, &api_rate);
+
             let mut game = GameData {
                 result: GameResultData::Other,
                 team: Vec::new(),
@@ -125,10 +146,15 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
                 game_id: game_id,
             };
 
-            let game_info = get_game_info(&client, &game_id.to_string()).await?;
-            // API has a quota limit, pause so we don't get an error
-            // TODO - do some math and dial this down as much as possible
-            std::thread::sleep(std::time::Duration::from_millis(3000));
+            let game_info = match get_game_info(&client, &game_id.to_string()).await {
+                Ok(gi) => gi,
+                Err(e) => {
+                    println!("Error in get_game_info: {}", e);
+                    more_matches = false;
+                    break;
+                },
+            };
+            last_call = std::time::Instant::now();
 
             assert!(game_info.participantIdentities.len() == game_info.participants.len());
             let iter = game_info.participantIdentities.iter()
@@ -177,23 +203,60 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
 
             game.game_id = game_id;
 
-            data.push(game);
+            if is_valid_game(&game) {
+                data.push(game);
+                // Overwrite data file on each call
+                let serialized = serde_json::to_string(&data)?;
+                std::fs::write(&cache_file, serialized)?;
+            }
         }
     }
 
     println!("Writing out data to cache dir");
     let serialized = serde_json::to_string(&data)?;
-    std::fs::write(cache_file, serialized)?;
+    std::fs::write(&cache_file, serialized)?;
     Ok(data)
 }
 
-fn analyze_data(_data: &Vec<GameData>) {
+fn analyze_data(data: &Vec<GameData>, counterpart_summoner_id: &str) {
     println!("Data will be analyzed here");
+
+    let with_idx = 0;
+    let without_idx = 1;
+    let mut wins: Vec<u32> = [0, 0].to_vec();
+    let mut matches: Vec<u32> = [0, 0].to_vec();
+    // Add up games with counterpart summoner
+    let mut count = 0;
+    for game in data {
+        if count > 100 {
+            break;
+        }
+
+        for member in &game.team {
+            let mut idx = without_idx;
+            if member.summ_id == counterpart_summoner_id {
+                idx = with_idx;
+            }
+
+            if game.result == GameResultData::Win {
+                wins[idx] += 1;
+            }
+            matches[idx] += 1;
+        }
+        count += 1;
+    }
+
+    println!("Win % with:    {}%", wins[with_idx] as f64 / matches[with_idx] as f64);
+    println!("Win % without: {}%", wins[without_idx] as f64 / matches[without_idx] as f64);
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _args: Vec<String> = std::env::args().collect();
+
     let data = collect_data("Suq Mediq").await?;
-    analyze_data(&data);
+    // Get the counterpart summoner id
+    let counterpart = get_account_info("l Bang Hot Men").await?;
+    analyze_data(&data, &counterpart.id);
     Ok(())
 }
