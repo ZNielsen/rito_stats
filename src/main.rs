@@ -46,9 +46,32 @@ async fn get_game_info(client: &Client, game_id: &str) -> Result<GameInfo, Box<d
         "?api_key=" + &get_api_key()?;
     let request = String::from(ENDPOINT) + &slug;
     println!("Sending reqwest: {}", request);
-    let resp = client.get(request).send().await?;
+    let resp = client.get(&request).send().await?;
 
-    Ok(resp.json::<GameInfo>().await?)
+    let game = match resp.json::<GameInfo>().await {
+        Ok(g) => g,
+        Err(e) => {
+            println!("error decoding match into json: {}", e);
+
+            // Sleep before we make the call
+            std::thread::sleep(std::time::Duration::from_millis(30000));
+            let resp = client.get(&request).send().await?;
+            println!("response: {:#?}", resp.bytes().await?);
+            let resp = client.get(&request).send().await?;
+            resp.json::<GameInfo>().await?
+        },
+    };
+
+    Ok(game)
+}
+
+fn data_has_game_info(data: &Vec<GameData>, game_id: i64) -> bool {
+    for game_data in data {
+        if game_data.game_id == game_id {
+            return true;
+        }
+    }
+    false
 }
 
 async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::error::Error>> {
@@ -88,17 +111,20 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
             range_start, range_end, range_end-range_start);
         println!("more matches: {}", more_matches);
 
-        // TODO - Split this up into multiple threads
-        // https://stackoverflow.com/questions/51044467/how-can-i-perform-parallel-asynchronous-http-get-requests-with-reqwest
         for a_match in matches.matches {
+            let game_id = a_match.gameId;
+            if data_has_game_info(&data, game_id) {
+                // We already have the info for this game, skip making the request
+                continue;
+            }
+
             let mut game = GameData {
                 result: GameResultData::Other,
                 team: Vec::new(),
                 team_of_interest: 0,
-                game_id: 0,
+                game_id: game_id,
             };
 
-            let game_id = a_match.gameId;
             let game_info = get_game_info(&client, &game_id.to_string()).await?;
             // API has a quota limit, pause so we don't get an error
             // TODO - do some math and dial this down as much as possible
@@ -117,11 +143,6 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
 
                 assert!(participant.participantId == participant_identity.participantId);
 
-                println!("1:   {}", participant.participantId);
-                println!("2:   {}", participant_identity.participantId);
-                println!("3:   {}", participant_identity.player.summonerId);
-                println!("enc: {}", account_info.accountId);
-                println!("id:  {}", account_info.id);
                 if participant_identity.player.summonerId == account_info.id {
                     game.team_of_interest = participant.teamId;
                 }
