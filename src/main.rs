@@ -64,7 +64,7 @@ async fn get_game_info(client: &Client, game_id: &str) -> Result<GameInfo, Box<d
     Ok(game)
 }
 
-fn data_has_game_info(data: &Vec<GameData>, game_id: i64) -> bool {
+fn data_has_game_info(data: &Vec<GameInfo>, game_id: i64) -> bool {
     for game_data in data {
         if game_data.game_id == game_id {
             return true;
@@ -82,14 +82,14 @@ fn rate_limiter(last_call: &std::time::Instant, api_rate: &std::time::Duration) 
 }
 
 
-async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::error::Error>> {
-    let mut data = Vec::<GameData>::new();
+async fn collect_data(summoner: &str) -> Result<Vec<GameInfo>, Box<dyn std::error::Error>> {
+    let mut data = Vec::<GameInfo>::new();
 
     let account_info = get_account_info(&summoner).await?;
-    println!("encrypted account id : {}" , account_info.accountId);
+    println!("encrypted account id : {}" , account_info.account_id);
 
     // See if there is a cache of this summoner
-    let cache_file = String::from("cache/") + &account_info.accountId;
+    let cache_file = String::from("cache/") + &account_info.account_id;
     if std::path::Path::new(&cache_file).exists() {
         // Load cached data
         data = serde_json::from_str(&std::fs::read_to_string(&cache_file)?)?;
@@ -108,15 +108,15 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
     let api_rate = std::time::Duration::from_millis(1200);
     while more_matches {
         println!("fetching matches with start_idx: {}, end_idx: {}", start_idx, end_idx);
-        let matches = get_matches(&client, &account_info.accountId, start_idx, end_idx).await?;
+        let matches = get_matches(&client, &account_info.account_id, start_idx, end_idx).await?;
         println!("matches: {:?}", matches);
 
         // Set up the next indexes
         start_idx = end_idx+1;
         end_idx = start_idx + 100;
 
-        let range_start = matches.startIndex;
-        let range_end = matches.endIndex;
+        let range_start = matches.start_index;
+        let range_end = matches.end_index;
         // TODO - does this have a 1% chance of causing an error?
         more_matches = range_end-range_start == 100;
 
@@ -125,7 +125,7 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
         println!("more matches: {}", more_matches);
 
         for this_match in matches.matches {
-            if data_has_game_info(&data, this_match.gameId) {
+            if data_has_game_info(&data, this_match.game_id) {
                 // We already have the info for this game, skip making the request
                 continue;
             }
@@ -133,17 +133,7 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
             // API has a quota limit, pause so we don't get an error
             rate_limiter(&last_call, &api_rate);
 
-            let mut game = GameData {
-                result: GameResultData::Other,
-                teams: HashMap::new(),
-                team_of_interest: 0,
-                game_id: this_match.gameId,
-                game_duration: 0,
-                game_mode: String::new(),
-                game_type: String::new(),
-            };
-
-            let game_info = match get_game_info(&client, &this_match.gameId.to_string()).await {
+            let game_info = match get_game_info(&client, &this_match.game_id.to_string()).await {
                 Ok(gi) => gi,
                 Err(e) => {
                     println!("Error in get_game_info: {}", e);
@@ -152,47 +142,7 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
                 },
             };
             last_call = std::time::Instant::now();
-
-            assert!(game_info.participantIdentities.len() == game_info.participants.len());
-            let iter = game_info.participantIdentities.iter()
-                .zip(game_info.participants.iter())
-                .map(|(x, y)| (x, y));
-
-            // Get all the participants for this game
-            let mut blue_team: Vec<PlayerData> = Vec::new();
-            let mut red_team: Vec<PlayerData> = Vec::new();
-            for it in iter {
-                let (participant_identity, participant) = it;
-
-                assert!(participant.participantId == participant_identity.participantId);
-
-                if participant_identity.player.summonerId == account_info.id {
-                    game.team_of_interest = participant.teamId;
-                }
-
-                let p = PlayerData {
-                    lane: participant.timeline.lane.clone(),
-                    summ_name: participant_identity.player.summonerName.clone(),
-                    summ_id: participant_identity.player.summonerId.clone(),
-
-                };
-
-                assert!(participant.teamId != 0);
-                game.teams.entry(participant.teamId)
-                    .or_insert(Vec::new())
-                    .push(p);
-            }
-
-            for team_stats in game_info.teams {
-                if team_stats.teamId == game.team_of_interest {
-                    if team_stats.win == "Win" {
-                        game.result = GameResultData::Win;
-                    }
-                }
-            }
-
-            game.game_duration = game_info.gameDuration;
-            data.push(game);
+            data.push(game_info);
             // Overwrite data file on each call
             let serialized = serde_json::to_string(&data)?;
             std::fs::write(&cache_file, serialized)?;
@@ -205,11 +155,11 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameData>, Box<dyn std::erro
     Ok(data)
 }
 
-fn is_valid_game(game: &GameData) -> bool {
+fn is_valid_game(game: &GameInfo) -> bool {
     // Has 10 players
     let mut player_count = 0;
-    for team in game.teams.values() {
-        player_count += team.len();
+    for _ in game.participant_identities {
+        player_count += 1;
     }
     if player_count != 10 {
         println!("Invalid game: {} players", player_count);
@@ -227,7 +177,30 @@ fn is_valid_game(game: &GameData) -> bool {
     true
 }
 
-fn analyze_data(data: &Vec<GameData>, counterpart_summoner_id: &str) {
+/// Time sort the data
+fn sort_data(data: &mut Vec<GameInfo>) {
+    // for game_info in data {
+    //     let mut teams = HashMap::new();
+    //     let mut team_of_interest = 0;
+
+    //     assert!(game_info.participant_identities.len() == game_info.participants.len());
+    //     let iter = game_info.participant_identities.iter()
+    //         .zip(game_info.participants.iter())
+    //         .map(|(x, y)| (x, y));
+
+    //     // Get all the participants for this game
+    //     for it in iter {
+    //         let (participant_identity, participant) = it;
+
+    //         assert!(participant.participant_id == participant_identity.participant_id);
+
+    //         assert!(participant.team_id != 0);
+    //         // Sort players into teams
+    //     }
+    // }
+}
+
+fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_summoner_id: &str) {
     println!("Data will be analyzed here");
 
     let with_idx = 0;
@@ -235,29 +208,46 @@ fn analyze_data(data: &Vec<GameData>, counterpart_summoner_id: &str) {
     let mut wins: Vec<u32> = [0, 0].to_vec();
     let mut matches: Vec<u32> = [0, 0].to_vec();
     // Add up games with counterpart summoner
-    let mut count = 0;
+    let mut counts: Vec<u32> = [0, 0].to_vec();
     for game in data {
 
         if !is_valid_game(&game) {
             continue;
         }
 
-        if count > 100 {
+        if counts[with_idx] >= 100 && counts[without_idx] >= 100 {
             break;
         }
 
-        for member in &game.teams[&game.team_of_interest] {
-            let mut idx = without_idx;
-            if member.summ_id == counterpart_summoner_id {
+        // Make the zipped iterator
+        let iter = game.participants.iter()
+            .zip(game.participant_identities.iter())
+            .map(|(x, y)| (x, y));
+        let mut idx = without_idx;
+        let mut win = false;
+        for (participant, participant_identity) in iter {
+            if participant_identity.player.summoner_id == counterpart_summoner_id {
                 idx = with_idx;
             }
 
-            if game.result == GameResultData::Win {
+            if participant_identity.player.summoner_id == summoner_id {
+                for team in game.teams {
+                    if team.team_id == participant.team_id {
+                        if team.win == "Win" {
+                            win = true;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if counts[idx] < 100 {
+            if win {
                 wins[idx] += 1;
             }
             matches[idx] += 1;
         }
-        count += 1;
     }
 
     println!("Win % with:    {}%", wins[with_idx] as f64 / matches[with_idx] as f64);
@@ -268,9 +258,10 @@ fn analyze_data(data: &Vec<GameData>, counterpart_summoner_id: &str) {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _args: Vec<String> = std::env::args().collect();
 
-    let data = collect_data("Suq Mediq").await?;
+    let summoner = "Suq Mediq".to_owned();
+    let data = collect_data(&summoner).await?;
     // Get the counterpart summoner id
     let counterpart = get_account_info("l Bang Hot Men").await?;
-    analyze_data(&data, &counterpart.id);
+    analyze_data(&data, &summoner, &counterpart.id);
     Ok(())
 }
