@@ -1,6 +1,5 @@
 #![allow(non_snake_case)]
 use reqwest::Client;
-use std::collections::HashMap;
 use std::vec::Vec;
 
 pub mod structs;
@@ -81,7 +80,6 @@ fn rate_limiter(last_call: &std::time::Instant, api_rate: &std::time::Duration) 
     }
 }
 
-
 async fn collect_data(summoner: &str) -> Result<Vec<GameInfo>, Box<dyn std::error::Error>> {
     let mut data = Vec::<GameInfo>::new();
 
@@ -158,7 +156,7 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameInfo>, Box<dyn std::erro
 fn is_valid_game(game: &GameInfo) -> bool {
     // Has 10 players
     let mut player_count = 0;
-    for _ in game.participant_identities {
+    for _ in &game.participant_identities {
         player_count += 1;
     }
     if player_count != 10 {
@@ -172,50 +170,28 @@ fn is_valid_game(game: &GameInfo) -> bool {
     }
 
     // is just a normal game (Summoner's Rift)
-
+    if game.game_mode == "CLASSIC" && game.game_type == "MATCHED_GAME" {
+        return false;
+    }
 
     true
 }
 
-/// Time sort the data
-fn sort_data(data: &mut Vec<GameInfo>) {
-    // for game_info in data {
-    //     let mut teams = HashMap::new();
-    //     let mut team_of_interest = 0;
-
-    //     assert!(game_info.participant_identities.len() == game_info.participants.len());
-    //     let iter = game_info.participant_identities.iter()
-    //         .zip(game_info.participants.iter())
-    //         .map(|(x, y)| (x, y));
-
-    //     // Get all the participants for this game
-    //     for it in iter {
-    //         let (participant_identity, participant) = it;
-
-    //         assert!(participant.participant_id == participant_identity.participant_id);
-
-    //         assert!(participant.team_id != 0);
-    //         // Sort players into teams
-    //     }
-    // }
-}
-
 fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_summoner_id: &str) {
     println!("Data will be analyzed here");
+    let game_limit = 100;
 
     let with_idx = 0;
     let without_idx = 1;
     let mut wins: Vec<u32> = [0, 0].to_vec();
     let mut matches: Vec<u32> = [0, 0].to_vec();
-    // Add up games with counterpart summoner
-    let mut counts: Vec<u32> = [0, 0].to_vec();
     for game in data {
 
         if !is_valid_game(&game) {
             continue;
         }
 
-        if counts[with_idx] >= 100 && counts[without_idx] >= 100 {
+        if matches[with_idx] >= game_limit && matches[without_idx] >= game_limit {
             break;
         }
 
@@ -231,7 +207,7 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_summoner_id
             }
 
             if participant_identity.player.summoner_id == summoner_id {
-                for team in game.teams {
+                for team in &game.teams {
                     if team.team_id == participant.team_id {
                         if team.win == "Win" {
                             win = true;
@@ -242,7 +218,7 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_summoner_id
             }
         }
 
-        if counts[idx] < 100 {
+        if matches[idx] < game_limit {
             if win {
                 wins[idx] += 1;
             }
@@ -259,7 +235,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _args: Vec<String> = std::env::args().collect();
 
     let summoner = "Suq Mediq".to_owned();
-    let data = collect_data(&summoner).await?;
+    let mut data: Vec<GameInfo> = collect_data(&summoner).await?;
+    data.sort_by(|a, b| b.game_creation.cmp(&a.game_creation));
+
     // Get the counterpart summoner id
     let counterpart = get_account_info("l Bang Hot Men").await?;
     analyze_data(&data, &summoner, &counterpart.id);
