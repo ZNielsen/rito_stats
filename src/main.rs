@@ -53,9 +53,9 @@ async fn get_game_info(client: &Client, game_id: &str) -> Result<GameInfo, Box<d
     let game = match serde_json::from_str(&str) {
         Ok(g) => g,
         Err(e) => {
-            println!("error decoding match into json: {}", e);
-            println!("response was: {:?}", str);
+            println!("Error decoding match into json: {}", e);
             std::fs::write("bad_game.json", str)?;
+            println!("Bad game written to bad_game.json for inspection");
             return Err(std::boxed::Box::new(e));
         },
     };
@@ -74,9 +74,12 @@ fn data_has_game_info(data: &Vec<GameInfo>, game_id: i64) -> bool {
 
 /// Wait until the specified amount of time has passed since the last call
 fn rate_limiter(last_call: &std::time::Instant, api_rate: &std::time::Duration) {
-    let sleep_time = std::time::Duration::from_millis(10);
-    while last_call.elapsed().as_millis() < api_rate.as_millis() {
+    let mut time_to_wait: i128 = api_rate.as_millis() as i128 - last_call.elapsed().as_millis() as i128;
+    while time_to_wait > 0 {
+        let sleep_time = std::time::Duration::from_millis(time_to_wait as u64);
+        println!("rate_limiter: Sleeping for {}ms", time_to_wait);
         std::thread::sleep(sleep_time);
+        time_to_wait = api_rate.as_millis() as i128 - last_call.elapsed().as_millis() as i128;
     }
 }
 
@@ -103,7 +106,7 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameInfo>, Box<dyn std::erro
     // The API has a limit of 100 calls in 2 minutes
     // 120 sec / 100 calls == 1.2 seconds between calls
     let mut last_call = std::time::Instant::now();
-    let api_rate = std::time::Duration::from_millis(1200);
+    let api_rate = std::time::Duration::from_millis(1300);
     while more_matches {
         println!("fetching matches with start_idx: {}, end_idx: {}", start_idx, end_idx);
         let matches = get_matches(&client, &account_info.account_id, start_idx, end_idx).await?;
@@ -153,7 +156,7 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameInfo>, Box<dyn std::erro
     Ok(data)
 }
 
-fn is_valid_game(game: &GameInfo) -> bool {
+fn is_valid_game(game: &GameInfo, partner_ids: &Vec<String>) -> bool {
     // Has 10 players
     let mut player_count = 0;
     for _ in &game.participant_identities {
@@ -166,28 +169,38 @@ fn is_valid_game(game: &GameInfo) -> bool {
 
     // run time of over 10 min
     if game.game_duration < (10 * 60) {
+        println!("Invalid game: game only {} min", game.game_duration as f64 / 60.0);
         return false;
     }
 
     // is just a normal game (Summoner's Rift)
-    if game.game_mode == "CLASSIC" && game.game_type == "MATCHED_GAME" {
+    if game.game_mode != "CLASSIC" || game.game_type != "MATCHED_GAME" {
+        println!("Invalid game: mode/type: {}/{}", game.game_mode, game.game_type);
         return false;
+    }
+
+    // Has a partner in it
+    if !partner_ids.is_empty() {
+
     }
 
     true
 }
 
-fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_summoner_id: &str) {
-    println!("Data will be analyzed here");
-    let game_limit = 100;
+fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, partner_ids: &Vec<String>, counterpart_ids: &Vec<String>) {
+    // Assert data is sorted
+    assert!(data.len() > 1);
+    assert!(data[0].game_creation > data[1].game_creation);
+    println!("data.len(): {}", data.len());
 
+    let game_limit = 50;
     let with_idx = 0;
     let without_idx = 1;
     let mut wins: Vec<u32> = [0, 0].to_vec();
     let mut matches: Vec<u32> = [0, 0].to_vec();
     for game in data {
 
-        if !is_valid_game(&game) {
+        if !is_valid_game(&game, partner_ids) {
             continue;
         }
 
@@ -202,12 +215,15 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_summoner_id
         let mut idx = without_idx;
         let mut win = false;
         for (participant, participant_identity) in iter {
-            if participant_identity.player.summoner_id == counterpart_summoner_id {
-                idx = with_idx;
+            for id in counterpart_ids {
+                if &participant_identity.player.summoner_id == id {
+                    idx = with_idx;
+                }
             }
 
             if participant_identity.player.summoner_id == summoner_id {
                 for team in &game.teams {
+                    println!("team.win: {}", team.win);
                     if team.team_id == participant.team_id {
                         if team.win == "Win" {
                             win = true;
@@ -226,20 +242,36 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_summoner_id
         }
     }
 
-    println!("Win % with:    {}%", wins[with_idx] as f64 / matches[with_idx] as f64);
-    println!("Win % without: {}%", wins[without_idx] as f64 / matches[without_idx] as f64);
+    println!("Win % with:    {}/{}: {}%",
+        wins[with_idx], matches[with_idx], wins[with_idx] as f64 / matches[with_idx] as f64);
+    println!("Win % without: {}/{}: {}%",
+        wins[without_idx], matches[without_idx], wins[without_idx] as f64 / matches[without_idx] as f64);
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _args: Vec<String> = std::env::args().collect();
 
-    let summoner = "Suq Mediq".to_owned();
-    let mut data: Vec<GameInfo> = collect_data(&summoner).await?;
+    let summoner_name = "Suq Mediq".to_owned();
+    let summoner = get_account_info(&summoner_name).await?;
+
+    let partner_names: Vec<String> = vec![];
+    let counterpart_names: Vec<String> = vec!["l Bang Hot Men".to_owned()];
+    let mut partners: Vec<String> = Vec::new();
+    let mut counterparts: Vec<String> = Vec::new();
+    for s in partner_names {
+        let account = get_account_info(&s).await?;
+        partners.push(account.id);
+    }
+    for s in counterpart_names {
+        let account = get_account_info(&s).await?;
+        counterparts.push(account.id);
+    }
+
+    let mut data: Vec<GameInfo> = collect_data(&summoner_name).await?;
     data.sort_by(|a, b| b.game_creation.cmp(&a.game_creation));
 
     // Get the counterpart summoner id
-    let counterpart = get_account_info("l Bang Hot Men").await?;
-    analyze_data(&data, &summoner, &counterpart.id);
+    analyze_data(&data, &summoner.id, &partners, &counterparts);
     Ok(())
 }

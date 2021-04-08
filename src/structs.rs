@@ -40,6 +40,7 @@ pub struct Player {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Timeline {
     pub lane: String
 }
@@ -53,6 +54,7 @@ pub struct Participant {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParticipantId {
     pub participant_id: i64,
     pub player: Player,
