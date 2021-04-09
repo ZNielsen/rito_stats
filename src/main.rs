@@ -156,7 +156,7 @@ async fn collect_data(summoner: &str) -> Result<Vec<GameInfo>, Box<dyn std::erro
     Ok(data)
 }
 
-fn is_valid_game(game: &GameInfo, partner_ids: &Vec<String>) -> bool {
+fn is_valid_game(game: &GameInfo) -> bool {
     // Has 10 players
     let mut player_count = 0;
     for _ in &game.participant_identities {
@@ -179,15 +179,10 @@ fn is_valid_game(game: &GameInfo, partner_ids: &Vec<String>) -> bool {
         return false;
     }
 
-    // Has a partner in it
-    if !partner_ids.is_empty() {
-
-    }
-
     true
 }
 
-fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, partner_ids: &Vec<String>, counterpart_ids: &Vec<String>) {
+fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_id: &str) {
     // Assert data is sorted
     assert!(data.len() > 1);
     assert!(data[0].game_creation > data[1].game_creation);
@@ -200,7 +195,7 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, partner_ids: &Vec<Strin
     let mut matches: Vec<u32> = [0, 0].to_vec();
     for game in data {
 
-        if !is_valid_game(&game, partner_ids) {
+        if !is_valid_game(&game) {
             continue;
         }
 
@@ -215,10 +210,8 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, partner_ids: &Vec<Strin
         let mut idx = without_idx;
         let mut win = false;
         for (participant, participant_identity) in iter {
-            for id in counterpart_ids {
-                if &participant_identity.player.summoner_id == id {
-                    idx = with_idx;
-                }
+            if &participant_identity.player.summoner_id == counterpart_id {
+                idx = with_idx;
             }
 
             if participant_identity.player.summoner_id == summoner_id {
@@ -248,6 +241,13 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, partner_ids: &Vec<Strin
         wins[without_idx], matches[without_idx], wins[without_idx] as f64 / matches[without_idx] as f64);
 }
 
+fn print_to_csv(data: &Vec<GameInfo>, summoner: &Account) {
+    // Make file (with summoner's name)
+    // Create a file
+    // format each game
+    // write out to file
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _args: Vec<String> = std::env::args().collect();
@@ -255,23 +255,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let summoner_name = "Suq Mediq".to_owned();
     let summoner = get_account_info(&summoner_name).await?;
 
-    let partner_names: Vec<String> = vec![];
-    let counterpart_names: Vec<String> = vec!["l Bang Hot Men".to_owned()];
-    let mut partners: Vec<String> = Vec::new();
-    let mut counterparts: Vec<String> = Vec::new();
-    for s in partner_names {
-        let account = get_account_info(&s).await?;
-        partners.push(account.id);
-    }
-    for s in counterpart_names {
-        let account = get_account_info(&s).await?;
-        counterparts.push(account.id);
-    }
+    let counterpart_name = "l Bang Hot Men".to_owned();
+    let counterpart = get_account_info(&counterpart_name).await?;
 
     let mut data: Vec<GameInfo> = collect_data(&summoner_name).await?;
     data.sort_by(|a, b| b.game_creation.cmp(&a.game_creation));
 
-    // Get the counterpart summoner id
-    analyze_data(&data, &summoner.id, &partners, &counterparts);
+    analyze_data(&data, &summoner.id, &counterpart.id);
+    print_to_csv(&data, &summoner);
+
     Ok(())
 }
