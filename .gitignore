@@ -10,3 +10,4 @@ target/
 
 api.key
 bad_game.json
+output/
