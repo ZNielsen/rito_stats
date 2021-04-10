@@ -255,7 +255,9 @@ fn print_to_csv(data: &impl CSVable, summoner: &Account) -> Result<(), Box<dyn s
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let _args: Vec<String> = std::env::args().collect();
-    std::fs::create_dir(OUT_DIR)?;
+    if !Path::exists(Path::new(OUT_DIR)) {
+        std::fs::create_dir(OUT_DIR)?;
+    }
 
     let summoner_name = "Suq Mediq".to_owned();
     let summoner = get_account_info(&summoner_name).await?;
