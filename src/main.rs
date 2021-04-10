@@ -56,7 +56,7 @@ async fn get_game_info(client: &Client, game_id: &str) -> Result<GameInfo, Box<d
         Ok(g) => g,
         Err(e) => {
             println!("Error decoding match into json: {}", e);
-            std::fs::write("bad_game.json", str)?;
+            std::fs::write("output/bad_game.json", str)?;
             println!("Bad game written to bad_game.json for inspection");
             return Err(std::boxed::Box::new(e));
         },
@@ -165,19 +165,19 @@ fn is_valid_game(game: &GameInfo) -> bool {
         player_count += 1;
     }
     if player_count != 10 {
-        println!("Invalid game: {} players", player_count);
+        // println!("Invalid game: {} players", player_count);
         return false;
     }
 
     // run time of over 10 min
     if game.game_duration < (10 * 60) {
-        println!("Invalid game: game only {} min", game.game_duration as f64 / 60.0);
+        // println!("Invalid game: game only {} min", game.game_duration as f64 / 60.0);
         return false;
     }
 
     // is just a normal game (Summoner's Rift)
     if game.game_mode != "CLASSIC" || game.game_type != "MATCHED_GAME" {
-        println!("Invalid game: mode/type: {}/{}", game.game_mode, game.game_type);
+        // println!("Invalid game: mode/type: {}/{}", game.game_mode, game.game_type);
         return false;
     }
 
@@ -218,7 +218,6 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_id: &str) {
 
             if participant_identity.player.summoner_id == summoner_id {
                 for team in &game.teams {
-                    println!("team.win: {}", team.win);
                     if team.team_id == participant.team_id {
                         if team.win == "Win" {
                             win = true;
@@ -237,15 +236,15 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_id: &str) {
         }
     }
 
-    println!("Win % with:    {}/{}: {}%",
-        wins[with_idx], matches[with_idx], wins[with_idx] as f64 / matches[with_idx] as f64);
-    println!("Win % without: {}/{}: {}%",
-        wins[without_idx], matches[without_idx], wins[without_idx] as f64 / matches[without_idx] as f64);
+    println!("Win % with:    {}/{}: {:.2}%",
+        wins[with_idx], matches[with_idx], (wins[with_idx] as f64 / matches[with_idx] as f64) * 100.0);
+    println!("Win % without: {}/{}: {:.2}%",
+        wins[without_idx], matches[without_idx], (wins[without_idx] as f64 / matches[without_idx] as f64) * 100.0);
 }
 
 fn print_to_csv(data: &impl CSVable, summoner: &Account) -> Result<(), Box<dyn std::error::Error>>{
     // Make file (with summoner's name)
-    let file_name = String::from(&summoner.name) + "_stats.csv";
+    let file_name = String::from("output/") + &summoner.name + "_stats.csv";
     data.write_to_csv(Path::new(&file_name), "|")?;
     Ok(())
 }

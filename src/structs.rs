@@ -1,3 +1,4 @@
+use std::io::prelude::*;
 use std::path::Path;
 use std::vec::Vec;
 use serde::{Deserialize, Serialize};
@@ -86,11 +87,14 @@ struct PrintItem {
 impl GameInfo {
     fn order(&self, player_idx: usize) -> Vec<PrintItem> {
         vec![
-            PrintItem{ title: "Game ID",     field: self.game_id.to_string() },
-            PrintItem{ title: "Player Name", field: self.participant_identities[player_idx].player.summoner_name.clone() },
-            PrintItem{ title: "Player ID",   field: self.participant_identities[player_idx].participant_id.to_string() },
-            PrintItem{ title: "Player Team", field: self.participants[player_idx].team_id.to_string() },
-            PrintItem{ title: "Team Result", field: self.teams[(self.participants[player_idx].team_id / 100) as usize].win.clone() },
+            PrintItem{ title: "Game ID",       field: self.game_id.to_string() },
+            PrintItem{ title: "Player Name",   field: self.participant_identities[player_idx].player.summoner_name.clone() },
+            PrintItem{ title: "Player ID",     field: self.participant_identities[player_idx].player.summoner_id.to_string() },
+            PrintItem{ title: "Player Team",   field: self.participants[player_idx].team_id.to_string() },
+            PrintItem{ title: "Team Result",   field: self.teams[((self.participants[player_idx].team_id/100)-1) as usize].win.clone() },
+            PrintItem{ title: "Game Duration", field: self.game_duration.to_string() },
+            PrintItem{ title: "Game Mode",     field: self.game_mode.clone() },
+            PrintItem{ title: "Game Type",     field: self.game_type.clone() },
         ]
     }
 }
@@ -100,8 +104,10 @@ pub trait CSVable {
 }
 impl CSVable for GameInfo {
     fn write_to_csv(&self, path: &Path, separator: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let num_players = self.participants.len();
-        for player_idx in 0..=num_players {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)?;
+        for player_idx in 0..self.participants.len() {
             let order = &self.order(player_idx);
             let mut s = String::new();
             for field in order {
@@ -110,7 +116,7 @@ impl CSVable for GameInfo {
             }
             // Trim the last separator
             s.truncate(s.len() - separator.len());
-            std::fs::write(path, &s)?;
+            writeln!(file, "{}", &s)?;
         }
 
         Ok(())
