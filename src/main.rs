@@ -10,6 +10,7 @@ use structs::*;
 pub const ENDPOINT: &'static str = "https://na1.api.riotgames.com";
 pub const BLUE_SIDE: i64 = 100;
 pub const RED_SIDE: i64 = 200;
+pub const OUT_DIR: &'static str = "output";
 
 /// Function expects API key to be the only thing in the file
 /// Only read once, then store the string statically
@@ -56,7 +57,8 @@ async fn get_game_info(client: &Client, game_id: &str) -> Result<GameInfo, Box<d
         Ok(g) => g,
         Err(e) => {
             println!("Error decoding match into json: {}", e);
-            std::fs::write("output/bad_game.json", str)?;
+            let file = String::from(OUT_DIR) + "/bad_game.json";
+            std::fs::write(file, str)?;
             println!("Bad game written to bad_game.json for inspection");
             return Err(std::boxed::Box::new(e));
         },
@@ -244,14 +246,15 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_id: &str) {
 
 fn print_to_csv(data: &impl CSVable, summoner: &Account) -> Result<(), Box<dyn std::error::Error>>{
     // Make file (with summoner's name)
-    let file_name = String::from("output/") + &summoner.name + "_stats.csv";
+    let file_name = String::from(OUT_DIR) + "/" + &summoner.name + "_stats.csv";
     data.write_to_csv(Path::new(&file_name), "|")?;
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _args: Vec<String> = std::env::args().collect();
+    // let _args: Vec<String> = std::env::args().collect();
+    std::fs::create_dir(OUT_DIR)?;
 
     let summoner_name = "Suq Mediq".to_owned();
     let summoner = get_account_info(&summoner_name).await?;
