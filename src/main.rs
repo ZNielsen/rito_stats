@@ -1,9 +1,11 @@
 #![allow(non_snake_case)]
 use reqwest::Client;
 use std::vec::Vec;
+use std::path::Path;
 
 pub mod structs;
 use structs::*;
+
 
 pub const ENDPOINT: &'static str = "https://na1.api.riotgames.com";
 pub const BLUE_SIDE: i64 = 100;
@@ -241,11 +243,11 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_id: &str) {
         wins[without_idx], matches[without_idx], wins[without_idx] as f64 / matches[without_idx] as f64);
 }
 
-fn print_to_csv(data: &Vec<GameInfo>, summoner: &Account) {
+fn print_to_csv(data: &impl CSVable, summoner: &Account) -> Result<(), Box<dyn std::error::Error>>{
     // Make file (with summoner's name)
-    // Create a file
-    // format each game
-    // write out to file
+    let file_name = String::from(&summoner.name) + "_stats.csv";
+    data.write_to_csv(Path::new(&file_name), "|");
+    Ok(())
 }
 
 #[tokio::main]
@@ -266,3 +268,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+

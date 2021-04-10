@@ -1,37 +1,17 @@
+use std::path::Path;
 use std::vec::Vec;
 use serde::{Deserialize, Serialize};
 
-// // My Data
-// #[derive(Debug, Deserialize, Serialize, PartialEq)]
-// pub enum GameResultData {
-//     Win,
-//     Other
-// }
-// #[derive(Debug, Deserialize, Serialize)]
-// pub struct PlayerData {
-//     pub lane: String,
-//     pub summ_name: String,
-//     pub summ_id: String,
-// }
-// #[derive(Debug, Deserialize, Serialize)]
-// pub struct GameData {
-//     pub result: GameResultData,
-//     pub teams: HashMap<i64, Vec<PlayerData>>,
-//     pub team_of_interest: i64,
-//     pub game_id: i64,
-//     pub game_duration: i64,
-//     pub game_mode: String,
-//     pub game_type: String,
-// }
-
-// Riot data for serde_json
+/// Overlapping information with Player, obtained via a different API call
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     pub account_id: String,
     pub id: String,
+    pub name: String,
 }
 
+/// Overlapping information with Account, obtained via a different API call
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Player {
@@ -95,4 +75,66 @@ pub struct Matches {
     pub start_index: i64,
     pub end_index: i64,
     pub matches: Vec<Match>,
+}
+
+pub type GamesData = Vec<GameInfo>;
+struct PrintItem<'a> {
+    title: &'static str,
+    field: &'a str,
+}
+
+impl GameInfo {
+    fn order<'a>(&'a self, player_idx: usize) -> Vec<PrintItem> {
+        vec![
+            PrintItem{ title: "Game ID",     field: &self.game_id.to_string() },
+            PrintItem{ title: "Player Name", field: &self.participant_identities[player_idx].player.summoner_name },
+            PrintItem{ title: "Player ID",   field: &self.participant_identities[player_idx].participant_id.to_string() },
+            PrintItem{ title: "Player Team", field: &self.participants[player_idx].team_id.to_string() },
+            PrintItem{ title: "Team Result", field: &self.teams[(self.participants[player_idx].team_id / 100) as usize].win },
+        ]
+    }
+}
+
+pub trait CSVable {
+    fn write_to_csv(&self, path: &Path, separator: &str) -> Result<(), Box<dyn std::error::Error>>;
+}
+impl CSVable for GameInfo {
+    fn write_to_csv(&self, path: &Path, separator: &str) -> Result<(), Box<dyn std::error::Error>> {
+        for player_idx in 0..=self.participants.len() {
+            let order = self.order(player_idx);
+            let mut s = String::new();
+            for field in order {
+                s += field.field;
+                s += separator;
+            }
+            // Trim the last separator
+            s.truncate(s.len() - separator.len());
+            std::fs::write(path, &s);
+        }
+
+        Ok(())
+    }
+}
+impl CSVable for GamesData {
+    fn write_to_csv(&self, path: &Path, separator: &str) -> Result<(), Box<dyn std::error::Error>> {
+        assert!(self.len() > 0);
+
+        // Write out first line
+        let order = self[0].order(0);
+        let mut s = String::new();
+        for field in order {
+            s += field.title;
+            s += separator;
+        }
+        // Trim the last separator
+        s.truncate(s.len() - separator.len());
+        std::fs::write(path, &s);
+
+        // Write out each row
+        for game in self {
+            game.write_to_csv(path, separator)?;
+        }
+
+        Ok(())
+    }
 }
