@@ -248,6 +248,7 @@ fn print_to_csv(data: &impl CSVable, summoner: &Account) -> Result<(), Box<dyn s
     // Make file (with summoner's name)
     let file_name = String::from(OUT_DIR) + "/" + &summoner.name + "_stats.csv";
     data.write_to_csv(Path::new(&file_name), "|")?;
+    println!("Wrote csv to output directory");
     Ok(())
 }
 
@@ -268,6 +269,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     analyze_data(&data, &summoner.id, &counterpart.id);
     print_to_csv(&data, &summoner)?;
 
+    println!("Done");
     Ok(())
 }
 
