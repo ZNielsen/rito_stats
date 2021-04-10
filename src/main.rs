@@ -246,7 +246,7 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_id: &str) {
 fn print_to_csv(data: &impl CSVable, summoner: &Account) -> Result<(), Box<dyn std::error::Error>>{
     // Make file (with summoner's name)
     let file_name = String::from(&summoner.name) + "_stats.csv";
-    data.write_to_csv(Path::new(&file_name), "|");
+    data.write_to_csv(Path::new(&file_name), "|")?;
     Ok(())
 }
 
@@ -264,7 +264,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     data.sort_by(|a, b| b.game_creation.cmp(&a.game_creation));
 
     analyze_data(&data, &summoner.id, &counterpart.id);
-    print_to_csv(&data, &summoner);
+    print_to_csv(&data, &summoner)?;
 
     Ok(())
 }
