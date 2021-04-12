@@ -91,6 +91,7 @@ impl GameInfo {
             PrintItem{ title: "Player Name",   field: self.participant_identities[player_idx].player.summoner_name.clone() },
             PrintItem{ title: "Player ID",     field: self.participant_identities[player_idx].player.summoner_id.to_string() },
             PrintItem{ title: "Player Team",   field: self.participants[player_idx].team_id.to_string() },
+            PrintItem{ title: "Player Role",   field: self.participants[player_idx].timeline.lane.clone() },
             PrintItem{ title: "Team Result",   field: self.teams[((self.participants[player_idx].team_id/100)-1) as usize].win.clone() },
             PrintItem{ title: "Game Duration", field: self.game_duration.to_string() },
             PrintItem{ title: "Game Mode",     field: self.game_mode.clone() },
@@ -135,6 +136,7 @@ impl CSVable for GamesData {
         }
         // Trim the last separator
         s.truncate(s.len() - separator.len());
+        s.push_str("\n");
         std::fs::write(path, &s)?;
 
         // Write out each row

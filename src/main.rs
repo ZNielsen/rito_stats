@@ -247,7 +247,7 @@ fn analyze_data(data: &Vec<GameInfo>, summoner_id: &str, counterpart_id: &str) {
 fn print_to_csv(data: &impl CSVable, summoner: &Account) -> Result<(), Box<dyn std::error::Error>>{
     // Make file (with summoner's name)
     let file_name = String::from(OUT_DIR) + "/" + &summoner.name + "_stats.csv";
-    data.write_to_csv(Path::new(&file_name), "|")?;
+    data.write_to_csv(Path::new(&file_name), ",")?;
     println!("Wrote csv to output directory");
     Ok(())
 }
