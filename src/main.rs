@@ -259,10 +259,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::create_dir(OUT_DIR)?;
     }
 
-    let summoner_name = "Suq Mediq".to_owned();
+    let summoner_name = "Summoner1".to_owned();
     let summoner = get_account_info(&summoner_name).await?;
 
-    let counterpart_name = "l Bang Hot Men".to_owned();
+    let counterpart_name = "Summoner2".to_owned();
     let counterpart = get_account_info(&counterpart_name).await?;
 
     let mut data: Vec<GameInfo> = collect_data(&summoner_name).await?;
